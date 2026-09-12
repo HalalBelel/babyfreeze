@@ -1,4 +1,4 @@
-const CACHE = "baby-videos-shell-v1";
+const CACHE = "baby-videos-shell-v2-old-player";
 const SHELL = [
   "./",
   "./index.html",
@@ -28,6 +28,19 @@ self.addEventListener("fetch", event => {
 
   const url = new URL(req.url);
   if (url.origin !== self.location.origin) return;
+
+  // For pages, prefer the network so updates replace an older installed PWA
+  // instead of being hidden behind an old cached index.html.
+  if (req.mode === "navigate") {
+    event.respondWith(
+      fetch(req).then(response => {
+        const copy = response.clone();
+        caches.open(CACHE).then(cache => cache.put("./index.html", copy));
+        return response;
+      }).catch(() => caches.match("./index.html"))
+    );
+    return;
+  }
 
   event.respondWith(
     caches.match(req).then(cached => cached || fetch(req).then(response => {

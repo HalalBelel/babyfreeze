@@ -1,0 +1,571 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+  <meta name="theme-color" content="#000000">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Baby Videos">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="apple-touch-icon" href="icons/icon-192.png">
+  <title>Baby Videos</title>
+  <style>
+    :root { color-scheme: dark; }
+    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+    html, body { width: 100%; min-height: 100%; margin: 0; background: #000; overscroll-behavior: none; }
+    body {
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      color: #fff;
+      user-select: none;
+      -webkit-user-select: none;
+      -webkit-touch-callout: none;
+    }
+
+    #home {
+      min-height: 100dvh;
+      display: grid;
+      place-items: center;
+      padding: max(18px, env(safe-area-inset-top)) max(18px, env(safe-area-inset-right)) max(18px, env(safe-area-inset-bottom)) max(18px, env(safe-area-inset-left));
+      background: #090909;
+    }
+
+    .video-grid {
+      width: min(980px, 100%);
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 16px;
+    }
+
+    .video-tile {
+      position: relative;
+      appearance: none;
+      border: 0;
+      padding: 0;
+      margin: 0;
+      overflow: hidden;
+      border-radius: 22px;
+      background: #181818;
+      box-shadow: 0 8px 28px rgba(0,0,0,.45);
+      cursor: pointer;
+      aspect-ratio: 16/9;
+      touch-action: manipulation;
+    }
+
+    .video-tile:last-child:nth-child(odd) {
+      grid-column: 1 / -1;
+      width: calc(50% - 8px);
+      justify-self: center;
+    }
+
+    .video-tile img {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      pointer-events: none;
+    }
+
+    .video-tile::after {
+      content: "▶";
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      transform: translate(-50%, -50%);
+      width: 64px;
+      height: 64px;
+      border-radius: 50%;
+      display: grid;
+      place-items: center;
+      padding-left: 4px;
+      font-size: 28px;
+      line-height: 1;
+      color: white;
+      background: rgba(0,0,0,.60);
+      box-shadow: 0 4px 18px rgba(0,0,0,.45);
+      pointer-events: none;
+    }
+
+    @media (max-width: 650px) {
+      .video-grid { gap: 12px; }
+      .video-tile { border-radius: 16px; }
+      .video-tile::after { width: 50px; height: 50px; font-size: 22px; }
+    }
+
+    @media (orientation: landscape) and (max-height: 520px) {
+      #home { padding: 10px; }
+      .video-grid { width: min(900px, 100%); grid-template-columns: repeat(3, 1fr); gap: 10px; }
+      .video-tile:last-child:nth-child(odd) { grid-column: auto; width: 100%; justify-self: stretch; }
+    }
+
+    #playerScreen {
+      position: fixed;
+      inset: 0;
+      width: 100vw;
+      height: 100dvh;
+      z-index: 1000;
+      display: none;
+      overflow: hidden;
+      background: #000;
+      touch-action: none;
+      overscroll-behavior: none;
+    }
+
+    #playerScreen.active { display: block; }
+
+    #playerHost,
+    #playerHost iframe {
+      position: absolute !important;
+      inset: 0 !important;
+      width: 100% !important;
+      height: 100% !important;
+      border: 0 !important;
+      background: #000 !important;
+    }
+
+    /* The shield intentionally sits over the iframe so baby taps cannot
+       pause, seek, open YouTube controls, or follow links. */
+    #touchShield {
+      position: absolute;
+      inset: 0;
+      z-index: 20;
+      background: transparent;
+      touch-action: none;
+      overscroll-behavior: none;
+    }
+
+    .parent-zone {
+      position: absolute;
+      top: 0;
+      width: 22vw;
+      max-width: 220px;
+      height: 28vh;
+      max-height: 190px;
+      z-index: 30;
+      background: transparent;
+      touch-action: none;
+    }
+    #parentLeft { left: 0; }
+    #parentRight { right: 0; }
+
+    #unlockProgress {
+      position: absolute;
+      left: 50%;
+      top: max(16px, env(safe-area-inset-top));
+      transform: translateX(-50%);
+      z-index: 40;
+      width: min(220px, 45vw);
+      height: 5px;
+      overflow: hidden;
+      border-radius: 999px;
+      background: rgba(255,255,255,.14);
+      opacity: 0;
+      transition: opacity .15s ease;
+      pointer-events: none;
+    }
+    #unlockProgress.visible { opacity: 1; }
+    #unlockBar {
+      width: 0%;
+      height: 100%;
+      background: rgba(255,255,255,.85);
+    }
+
+    #message {
+      position: absolute;
+      left: 50%;
+      bottom: max(18px, env(safe-area-inset-bottom));
+      transform: translateX(-50%);
+      z-index: 50;
+      padding: 8px 12px;
+      border-radius: 999px;
+      font-size: 13px;
+      background: rgba(0,0,0,.72);
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity .2s ease;
+      white-space: nowrap;
+    }
+    #message.show { opacity: 1; }
+  </style>
+</head>
+<body>
+  <main id="home" aria-label="Choose a video">
+    <div class="video-grid" id="videoGrid"></div>
+  </main>
+
+  <section id="playerScreen" aria-label="Protected video player">
+    <div id="playerHost"></div>
+    <div id="touchShield" aria-hidden="true"></div>
+    <div id="parentLeft" class="parent-zone" aria-hidden="true"></div>
+    <div id="parentRight" class="parent-zone" aria-hidden="true"></div>
+    <div id="unlockProgress"><div id="unlockBar"></div></div>
+    <div id="message"></div>
+  </section>
+
+  <script>
+  (() => {
+    "use strict";
+
+    const VIDEOS = [
+      "e4yqP4SjkfI",
+      "Og40mpl8VNc",
+      "5LGjvxABmYE",
+      "gngPQ771Ahk",
+      "oZJYn4UQJzk"
+    ];
+
+    const home = document.getElementById("home");
+    const grid = document.getElementById("videoGrid");
+    const playerScreen = document.getElementById("playerScreen");
+    const playerHost = document.getElementById("playerHost");
+    const shield = document.getElementById("touchShield");
+    const leftZone = document.getElementById("parentLeft");
+    const rightZone = document.getElementById("parentRight");
+    const unlockProgress = document.getElementById("unlockProgress");
+    const unlockBar = document.getElementById("unlockBar");
+    const message = document.getElementById("message");
+
+    let ytPlayer = null;
+    let ytApiReady = false;
+    let activeVideoId = null;
+    let protectedMode = false;
+    let wakeLock = null;
+    let restoreTimer = null;
+    let unlockTimer = null;
+    let unlockAnim = null;
+    let leftHeld = false;
+    let rightHeld = false;
+    let parentUnlockInProgress = false;
+
+    renderTiles();
+    installServiceWorker();
+    loadYouTubeAPI();
+    installProtectionEvents();
+
+    function renderTiles() {
+      const fragment = document.createDocumentFragment();
+      VIDEOS.forEach((id, index) => {
+        const button = document.createElement("button");
+        button.className = "video-tile";
+        button.type = "button";
+        button.setAttribute("aria-label", `Play video ${index + 1}`);
+
+        const img = document.createElement("img");
+        img.src = `https://i.ytimg.com/vi/${id}/hqdefault.jpg`;
+        img.alt = "";
+        img.loading = index < 4 ? "eager" : "lazy";
+        img.draggable = false;
+
+        button.appendChild(img);
+        button.addEventListener("click", () => startVideo(id), { passive: true });
+        fragment.appendChild(button);
+      });
+      grid.appendChild(fragment);
+    }
+
+    function loadYouTubeAPI() {
+      if (window.YT && window.YT.Player) {
+        ytApiReady = true;
+        return;
+      }
+      window.onYouTubeIframeAPIReady = () => {
+        ytApiReady = true;
+        if (protectedMode && activeVideoId && !ytPlayer) createPlayer(activeVideoId);
+      };
+      const script = document.createElement("script");
+      script.src = "https://www.youtube.com/iframe_api";
+      script.async = true;
+      document.head.appendChild(script);
+    }
+
+    async function startVideo(id) {
+      activeVideoId = id;
+      protectedMode = true;
+      parentUnlockInProgress = false;
+      home.style.display = "none";
+      playerScreen.classList.add("active");
+      document.body.style.overflow = "hidden";
+
+      trapBackButton();
+      await enterProtectedSurface();
+      await requestWakeLock();
+
+      if (ytApiReady) {
+        createPlayer(id);
+      } else {
+        showMessage("Loading video…");
+      }
+    }
+
+    function createPlayer(id) {
+      try {
+        if (ytPlayer && typeof ytPlayer.destroy === "function") ytPlayer.destroy();
+      } catch (_) {}
+      ytPlayer = null;
+      playerHost.innerHTML = '<div id="ytplayer"></div>';
+
+      ytPlayer = new YT.Player("ytplayer", {
+        videoId: id,
+        width: "100%",
+        height: "100%",
+        playerVars: {
+          autoplay: 1,
+          controls: 0,
+          disablekb: 1,
+          fs: 0,
+          iv_load_policy: 3,
+          modestbranding: 1,
+          playsinline: 1,
+          rel: 0,
+          loop: 1,
+          playlist: id
+        },
+        events: {
+          onReady: (event) => {
+            try { event.target.setLoop(true); } catch (_) {}
+            try { event.target.playVideo(); } catch (_) {}
+            keepVideoRunningSoon();
+          },
+          onStateChange: onYouTubeStateChange,
+          onError: () => showMessage("Video unavailable")
+        }
+      });
+    }
+
+    function onYouTubeStateChange(event) {
+      if (!window.YT || !protectedMode) return;
+
+      if (event.data === YT.PlayerState.ENDED) {
+        // Redundant loop fallback: even if YouTube's loop flag fails, restart.
+        try {
+          ytPlayer.seekTo(0, true);
+          ytPlayer.playVideo();
+        } catch (_) {}
+        return;
+      }
+
+      if (event.data === YT.PlayerState.PAUSED && !document.hidden && !parentUnlockInProgress) {
+        keepVideoRunningSoon();
+      }
+    }
+
+    function keepVideoRunningSoon() {
+      clearTimeout(restoreTimer);
+      restoreTimer = setTimeout(() => {
+        if (!protectedMode || document.hidden || parentUnlockInProgress) return;
+        try { ytPlayer && ytPlayer.playVideo(); } catch (_) {}
+      }, 180);
+    }
+
+    async function enterProtectedSurface() {
+      if (!protectedMode) return;
+
+      try {
+        if (!document.fullscreenElement && playerScreen.requestFullscreen) {
+          await playerScreen.requestFullscreen({ navigationUI: "hide" });
+        } else if (!document.webkitFullscreenElement && playerScreen.webkitRequestFullscreen) {
+          playerScreen.webkitRequestFullscreen();
+        }
+      } catch (_) {
+        // Installed PWA standalone/fullscreen mode may already fill the display,
+        // or the browser may refuse another fullscreen request.
+      }
+
+      try {
+        if (screen.orientation && screen.orientation.lock) {
+          await screen.orientation.lock("landscape");
+        }
+      } catch (_) {}
+    }
+
+    async function requestWakeLock() {
+      if (!protectedMode || !("wakeLock" in navigator)) return;
+      try {
+        wakeLock = await navigator.wakeLock.request("screen");
+        wakeLock.addEventListener("release", () => { wakeLock = null; });
+      } catch (_) {
+        wakeLock = null;
+      }
+    }
+
+    async function releaseWakeLock() {
+      try { if (wakeLock) await wakeLock.release(); } catch (_) {}
+      wakeLock = null;
+    }
+
+    function installProtectionEvents() {
+      // Any ordinary interaction over the video is swallowed. If fullscreen was
+      // dismissed, the gesture is also used to request it again.
+      ["pointerdown", "pointerup", "pointermove", "click", "dblclick", "contextmenu", "touchstart", "touchmove", "touchend"].forEach(type => {
+        shield.addEventListener(type, event => {
+          event.preventDefault();
+          event.stopPropagation();
+          if (type === "pointerdown" || type === "touchstart") {
+            enterProtectedSurface();
+            requestWakeLock();
+            keepVideoRunningSoon();
+          }
+        }, { passive: false });
+      });
+
+      document.addEventListener("contextmenu", event => event.preventDefault());
+      document.addEventListener("dragstart", event => event.preventDefault());
+      document.addEventListener("selectstart", event => event.preventDefault());
+
+      document.addEventListener("keydown", event => {
+        if (!protectedMode) return;
+        // Stop common keyboard exits/controls when a hardware keyboard is attached.
+        const blocked = [" ", "ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Escape", "MediaPlayPause", "MediaStop"];
+        if (blocked.includes(event.key)) {
+          event.preventDefault();
+          event.stopPropagation();
+          keepVideoRunningSoon();
+        }
+      }, true);
+
+      document.addEventListener("fullscreenchange", () => {
+        if (protectedMode && !document.fullscreenElement) {
+          // Browsers require a fresh user gesture to re-enter fullscreen. The next
+          // tap on the shield will do it; keep playback alive meanwhile.
+          keepVideoRunningSoon();
+        }
+      });
+
+      document.addEventListener("visibilitychange", () => {
+        if (!protectedMode) return;
+        if (document.hidden) {
+          releaseWakeLock();
+        } else {
+          requestWakeLock();
+          keepVideoRunningSoon();
+        }
+      });
+
+      window.addEventListener("pageshow", () => {
+        if (protectedMode) {
+          requestWakeLock();
+          keepVideoRunningSoon();
+        }
+      });
+
+      window.addEventListener("popstate", () => {
+        if (!protectedMode) return;
+        history.pushState({ babyLock: true }, "", location.href);
+        keepVideoRunningSoon();
+      });
+
+      setupParentZone(leftZone, "left");
+      setupParentZone(rightZone, "right");
+    }
+
+    function setupParentZone(element, side) {
+      const setHeld = value => {
+        if (side === "left") leftHeld = value;
+        else rightHeld = value;
+        updateUnlockGesture();
+      };
+
+      element.addEventListener("pointerdown", event => {
+        event.preventDefault();
+        event.stopPropagation();
+        try { element.setPointerCapture(event.pointerId); } catch (_) {}
+        setHeld(true);
+      }, { passive: false });
+
+      ["pointerup", "pointercancel", "pointerleave"].forEach(type => {
+        element.addEventListener(type, event => {
+          event.preventDefault();
+          event.stopPropagation();
+          setHeld(false);
+        }, { passive: false });
+      });
+    }
+
+    function updateUnlockGesture() {
+      if (!protectedMode) return;
+
+      if (leftHeld && rightHeld && !unlockTimer) {
+        parentUnlockInProgress = true;
+        unlockProgress.classList.add("visible");
+        const started = performance.now();
+
+        const animate = now => {
+          if (!leftHeld || !rightHeld || !protectedMode) return;
+          const pct = Math.min(100, ((now - started) / 4000) * 100);
+          unlockBar.style.width = pct + "%";
+          if (pct < 100) unlockAnim = requestAnimationFrame(animate);
+        };
+        unlockAnim = requestAnimationFrame(animate);
+
+        unlockTimer = setTimeout(exitProtectedMode, 4000);
+      } else if ((!leftHeld || !rightHeld) && unlockTimer) {
+        clearTimeout(unlockTimer);
+        unlockTimer = null;
+        if (unlockAnim) cancelAnimationFrame(unlockAnim);
+        unlockAnim = null;
+        unlockBar.style.width = "0%";
+        unlockProgress.classList.remove("visible");
+        parentUnlockInProgress = false;
+        keepVideoRunningSoon();
+      }
+    }
+
+    async function exitProtectedMode() {
+      clearTimeout(unlockTimer);
+      unlockTimer = null;
+      if (unlockAnim) cancelAnimationFrame(unlockAnim);
+      unlockAnim = null;
+      leftHeld = false;
+      rightHeld = false;
+      parentUnlockInProgress = true;
+      unlockBar.style.width = "100%";
+
+      try { if (ytPlayer) ytPlayer.pauseVideo(); } catch (_) {}
+      try { if (ytPlayer) ytPlayer.destroy(); } catch (_) {}
+      ytPlayer = null;
+      playerHost.innerHTML = "";
+
+      await releaseWakeLock();
+      try { if (screen.orientation && screen.orientation.unlock) screen.orientation.unlock(); } catch (_) {}
+      try {
+        if (document.fullscreenElement && document.exitFullscreen) await document.exitFullscreen();
+        else if (document.webkitFullscreenElement && document.webkitExitFullscreen) document.webkitExitFullscreen();
+      } catch (_) {}
+
+      protectedMode = false;
+      activeVideoId = null;
+      playerScreen.classList.remove("active");
+      home.style.display = "grid";
+      document.body.style.overflow = "";
+      unlockProgress.classList.remove("visible");
+      unlockBar.style.width = "0%";
+      parentUnlockInProgress = false;
+    }
+
+    function trapBackButton() {
+      try {
+        history.replaceState({ babyLockBase: true }, "", location.href);
+        history.pushState({ babyLock: true }, "", location.href);
+      } catch (_) {}
+    }
+
+    function showMessage(text) {
+      message.textContent = text;
+      message.classList.add("show");
+      clearTimeout(showMessage.timer);
+      showMessage.timer = setTimeout(() => message.classList.remove("show"), 1600);
+    }
+
+    function installServiceWorker() {
+      if ("serviceWorker" in navigator && location.protocol !== "file:") {
+        window.addEventListener("load", () => {
+          navigator.serviceWorker.register("sw.js").catch(() => {});
+        });
+      }
+    }
+  })();
+  </script>
+</body>
+</html>
